@@ -1,0 +1,11 @@
+# 忽略所有 dataset 文件夹
+dataset/
+data/
+
+# 忽略所有模型权重文件 (比如超过100M的)
+*.pth
+*.tar.gz
+*.onnx
+
+# 忽略 Python 缓存
+__pycache__/
