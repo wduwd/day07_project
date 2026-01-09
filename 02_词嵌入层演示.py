@@ -45,7 +45,18 @@ def dm01():
         # 5. 把词索引(张量形式) 转成 词向量.
         word_vector = embed(torch.tensor(i))    # 随机的, 每次都不一样, 无所谓.
         print(f'词: {word}, \t\t词向量: {word_vector}')
+def cut_words(text):
+    import jieba
+    print(jieba.__file__)
+    words = jieba.lcut(text)
+    print(f'分词结果: {words}')
+    vector_words=nn.Embedding(len(words), 4)
+    print(f"词向量: {vector_words}")
+    for i, word in enumerate(words):
+        word_vector = vector_words(torch.tensor(i))
+        print(f'{word}\t\t{word_vector}')  
 
 # 2. 测试
 if __name__ == '__main__':
-    dm01()
+    # dm01()
+    cut_words("北京冬奥会的进度条已经过半，不少外国运动员在完成自己的比赛后踏上归途。") 

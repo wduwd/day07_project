@@ -76,18 +76,45 @@ class LyricsDataset(torch.utils.data.Dataset):
 
     # 3. 当使用 obj[index]时, 自动调用此方法.
     def __getitem__(self, idx):
-        # idx: 指的是词的索引, 并将其修正索引值 到 文档的范围里边.
-        # 3.1 确保索引start在合法范围内, 避免越界, start: 当前样本的起始索引.
-        start = min(max(idx, 0), self.word_count - self.num_chars - 1)
-        # 3.2 计算当前样本的结束索引.
+        # 修改建议：加上 stride 逻辑
+        # 假设我们希望不想重叠，或者按照窗口滑动
+        # 如果目的是覆盖全文，通常 start 应该是：
+        start = idx * self.num_chars  # 这样 idx=1 时，start=10，接上 idx=0 的结尾
+        
+        # 你的原有逻辑
+        # start = min(max(idx, 0), self.word_count - self.num_chars - 1)
+        
+        # 为了防止溢出，可以结合使用
+        start = min(start, self.word_count - self.num_chars - 1)
+        
         end = start + self.num_chars
-        # 3.3 输入值, 从文档中取出 start ~  end 的索引的词 -> 作为 x
         x = self.corpus_idx[start:end]
-        # 3.4 输出值, 网络预测结果.
         y = self.corpus_idx[start + 1:end + 1]
-        # 3.5 返回输入值和输出值 -> 张量形式.
         return torch.tensor(x), torch.tensor(y)
 
+class NyModel(nn.Module):
+    """
+    RNN神经网络.
+    """
+    def __init__(self, unique_word_count, embedding_dim, hidden_dim, num_layers):
+        super().__init__()
+        # 1. 词向量层.
+        self.embedding = nn.Embedding(unique_word_count, embedding_dim)
+        # 2. RNN层.
+        self.rnn = nn.RNN(embedding_dim, hidden_dim, num_layers)
+        # 3. 输出层.
+        self.fc = nn.Linear(hidden_dim, unique_word_count)
+    def forward(self, x, hidden):
+        # 1. 词向量层.
+        
+        x = self.embedding(x)
+        # 2. RNN层.
+        out, hidden = self.rnn(x.transpose(0, 1), hidden)
+        # 3. 输出层.
+        out = self.fc(out.reshape(-1, out.shape[-1]))
+        return out, hidden
+    def init_hidden(self, batch_size):
+        return torch.zeros(1, batch_size, 256)
 
 # 3. 搭建RNN神经网络.
 class TextGenerator(nn.Module):
@@ -174,7 +201,30 @@ def train():
     # 8. 走到这里, 说明多轮训练结束(模型训练结束), 保存即可.
     torch.save(model.state_dict(), './model/text_generator.pth')
 
-
+def train1():
+    print('开始训练...')
+    unique_words, word_to_index, word_count, corpus_idx = build_vocab()
+    dataset = LyricsDataset(corpus_idx, 5)
+    model = TextGenerator(unique_word_count=len(unique_words))
+    dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    epochs = 100
+    for epoch in range(epochs):
+        start_time = time.time()
+        total_loss = 0.0
+        for x, y in dataloader:
+            hidden = model.init_hidden(x.size(0))
+            output, hidden = model(x, hidden)
+            y = y.transpose(0, 1).reshape(-1)
+            loss = criterion(output, y)
+            optimizer.zero_grad()
+            loss.backward() 
+            optimizer.step()
+            total_loss += loss.item()
+        avg_loss = total_loss / len(dataloader)
+        print(f'Epoch [{epoch + 1}/{epochs}], Loss: {avg_loss:.4f}, Time: {time.time() - start_time:.2f}s')
+    torch.save(model.state_dict(), './model/text_generator.pth')
 # 5. 模型预测.
 def evaluate(start_word, sentence_length):
     # 1. 构建词典.
@@ -203,19 +253,17 @@ def evaluate(start_word, sentence_length):
         print(unique_words[idx], end='')
 
 
-
 # 6. 测试
 if __name__ == '__main__':
     # 1. 获取数据, 进行分词, 获取词表.
-    # unique_words, word_to_index, word_count, corpus_idx = build_vocab()
+    unique_words, word_to_index, word_count, corpus_idx = build_vocab()
     # print(f'词的数量: {word_count}')         # 去重后, 5703个词
     # print(f'去重后的词: {unique_words}')     # ['想要', '有', '直升机', '\n', '和', '你'...'冠军', '要大卖']
     # print(f'每个词的索引: {word_to_index}')  # 词表: {'想要': 0, '有': 1, '直升机': 2, '\n': 3, '和': 4, '你': 5, ... '冠军': 5701, '要大卖': 5702}
     # print(f'文档中每个词对应的索引: {corpus_idx}')  # [0, 1, 2, 1 3, 40, 0, 4, 5, 6, 7, 8, 3, 40, 0, 4, 5, 9, 10, 11, 3, 40,......]
 
     # 2. 构建数据集
-    # dataset = LyricsDataset(corpus_idx, 5)
-    # print(f'句子数量: {len(dataset)}')
+ 
     # # 查看下 输入值 和 目标值.
     # x, y = dataset[1]
     # print(f'输入值: {x}')  # [0, 1, 2, 3, 40]    [1, 2, 3, 40, 0]
@@ -228,7 +276,7 @@ if __name__ == '__main__':
     #     print(f'参数名称: {name}, 参数维度: {parameter.shape}')
 
     # 4. 训练(并保存)模型.
-    # train()
+    train1()
 
     # 5. 测试模型.
-    evaluate('星星', 50)
+    # evaluate('星星', 50)
